@@ -1,5 +1,6 @@
 [bar.default]
-center = [ "clock", "media" ]
+start = [ "launcher", "wallpaper", "workspaces", "spacer_2", "media" ]
+center = [ "clock"]
 end = [
     "tray",
     "notifications",
@@ -16,6 +17,24 @@ font_family = "IosevkaTerm Nerd Font Mono"
 reserve_space = false
 smart_auto_hide = true
 
+[idle]
+behavior_order = [ "lock", "screen-off", "lock-and-suspend" ]
+
+    [idle.behavior.lock]
+    action = "lock"
+    enabled = true
+    timeout = 300.0
+
+    [idle.behavior.lock-and-suspend]
+    action = "lock_and_suspend"
+    enabled = true
+    timeout = 900.0
+
+    [idle.behavior.screen-off]
+    action = "screen_off"
+    enabled = true
+    timeout = 360.0
+
 [shell]
 font_family = "Iosevka NF"
 polkit_agent = true
@@ -25,6 +44,8 @@ polkit_agent = true
 
     [shell.screenshot]
     remember_last_region = true
+    directory = "~/Pictures/Screenshots"
+    filename_pattern = "Screenshot from %Y-%m-%d %H-%M-%S"
 
 [theme]
 builtin = "Gruvbox"
@@ -33,6 +54,9 @@ source = "wallpaper"
 
 [wallpaper]
 directory = "/home/mm-2103/Pictures/Wallpaper"
+
+[widget.clock]
+format = "{:%d/%m  %H:%M}"
 
 [widget.launcher]
 enabled = false
