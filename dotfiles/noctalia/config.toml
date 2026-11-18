@@ -10,7 +10,6 @@ end = [
     "volume",
     "brightness",
     "battery",
-    "control-center",
     "session"
 ]
 font_family = "IosevkaTerm Nerd Font Mono"
