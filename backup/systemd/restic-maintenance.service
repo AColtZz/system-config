@@ -1,0 +1,15 @@
+[Unit]
+Description=restic prune and integrity check
+OnFailure=restic-notify@%n.service
+After=restic-backup.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/restic/env
+Nice=19
+IOSchedulingClass=idle
+# Wait for the network, same as in restic-backup.service
+ExecStartPre=timeout 300 sh -c 'until restic cat config --no-lock >/dev/null; do sleep 5; done'
+ExecStart=restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune --retry-lock 2h
+# Download and verify a random 5% of the data. systemd needs "%%" to write a single "%".
+ExecStart=restic check --read-data-subset 5%% --retry-lock 2h

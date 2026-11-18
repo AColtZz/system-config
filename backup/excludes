@@ -1,0 +1,34 @@
+# Starting list of what restic skips. setup.sh copies it to ~/.config/restic/excludes
+# once, and each machine edits its own copy. Entries that don't exist do nothing.
+
+# caches, trash and search index
+$HOME/.cache
+$HOME/.local/share/Trash
+$HOME/.local/share/baloo
+$HOME/.var/app/*/cache
+$HOME/.config/**/Cache
+$HOME/.config/**/Code Cache
+$HOME/.config/**/GPUCache
+
+# Steam game installs (compatdata and userdata hold local saves, so they stay)
+$HOME/.local/share/Steam/*
+!$HOME/.local/share/Steam/steamapps
+!$HOME/.local/share/Steam/userdata
+$HOME/.local/share/Steam/steamapps/*
+!$HOME/.local/share/Steam/steamapps/compatdata
+
+# toolchains and package caches that can be downloaded again
+$HOME/Android/Sdk
+$HOME/.rustup
+$HOME/.gradle
+$HOME/.nuget
+$HOME/.npm
+$HOME/go/pkg
+
+# rootless container storage, partly owned by other users so restic can't read it
+$HOME/.local/share/containers
+
+# dependency folders (Rust target/ folders are skipped by --exclude-caches)
+node_modules
+.venv
+__pycache__

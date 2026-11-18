@@ -1,0 +1,15 @@
+[Unit]
+Description=restic backup
+OnFailure=restic-notify@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/restic/env
+Nice=19
+IOSchedulingClass=idle
+# After waking from sleep the network needs a few seconds, so wait up to 5 minutes for the repository
+ExecStartPre=timeout 300 sh -c 'until restic cat config --no-lock >/dev/null; do sleep 5; done'
+# Save the installed package lists so they end up in the backup. The "-" means a failure here is ignored.
+ExecStartPre=-sh -c 'pacman -Qqe > %h/.config/pkglist.txt'
+ExecStartPre=-sh -c 'flatpak list --app --columns=origin,application > %h/.config/flatpaks.txt'
+ExecStart=restic backup --files-from=%h/.config/restic/paths --exclude-file=%h/.config/restic/excludes --exclude-caches
