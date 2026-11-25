@@ -55,6 +55,10 @@ fi
 # Link the services and timers from this folder
 ln -sf "$here"/systemd/* "$HOME/.config/systemd/user/"
 
+# The tray icon script, used by restic-tray.service if you turn it on
+mkdir -p "$HOME/.local/bin"
+ln -sf "$here/restic-tray" "$HOME/.local/bin/"
+
 # Check the repository. restic exits with code 10 when there is none at that location yet.
 source "$conf/env"
 export RESTIC_REPOSITORY RESTIC_PASSWORD_FILE
@@ -80,3 +84,4 @@ echo
 echo "Done. Backups run every day at 17:00."
 echo "To start the first one now: systemctl --user start restic-backup.service"
 echo "Keep a copy of the password somewhere other than this machine."
+echo "Optional tray icon with the progress: systemctl --user enable --now restic-tray.service"

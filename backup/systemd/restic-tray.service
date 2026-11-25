@@ -1,0 +1,12 @@
+[Unit]
+Description=restic backup tray icon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/restic-tray
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Tray icon for the restic backup. See README.md.
+
+While restic-backup.service runs, the icon shows the percentage done, and its
+menu shows the amount of data, the file count and the time left. Otherwise the
+menu shows when the last backup ran and what it added, and the icon turns into
+a warning when that run failed.
+
+The progress comes from the JSON that restic-backup.service writes to
+~/.local/state/restic/backup.json. The icon needs a StatusNotifier tray: KDE,
+the waybar tray, or GNOME with the AppIndicator extension.
+
+Run with --status to print the same information once in a terminal.
+"""
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime
+
+STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+PROGRESS_FILE = os.path.join(STATE_HOME, "restic", "backup.json")
+BACKUP_UNIT = "restic-backup.service"
+MAINTENANCE_UNIT = "restic-maintenance.service"
+POLL_SECONDS = 3
+
+# The icons live in icons/ next to this script (it is usually started through a symlink)
+ICON_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "icons")
+ICON_IDLE = "restic-tray-idle"
+ICON_BUSY = "restic-tray-busy"
+ICON_FAILED = "restic-tray-warning"
+
+
+def size(n):
+    return f"{n / 1e9:.1f} GB" if n >= 1e9 else f"{n / 1e6:.0f} MB"
+
+
+def duration(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return "less than a minute"
+    if seconds < 3600:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds % 3600 // 60:02d} min"
+
+
+def when(moment):
+    days = (datetime.now().date() - moment.date()).days
+    day = {0: "today", 1: "yesterday"}.get(days, moment.strftime("%-d %b"))
+    return f"{day} {moment:%H:%M}"
+
+
+def last_message():
+    """The last JSON line restic wrote, and the file's modification time."""
+    try:
+        with open(PROGRESS_FILE, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 16384))
+            tail = f.read()
+        mtime = os.path.getmtime(PROGRESS_FILE)
+    except OSError:
+        return None, None
+    for line in reversed(tail.splitlines()):
+        try:
+            return json.loads(line), mtime
+        except ValueError:
+            continue
+    return None, mtime
+
+
+def unit_state(unit):
+    """ActiveState and Result of a user unit, for example ("activating", "success")."""
+    try:
+        out = subprocess.run(
+            ["systemctl", "--user", "show", "-p", "ActiveState", "-p", "Result", unit],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown", "unknown"
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    return props.get("ActiveState", "unknown"), props.get("Result", "unknown")
+
+
+def status():
+    """Returns (icon, label next to the icon, list of menu lines, busy)."""
+    backup_active, backup_result = unit_state(BACKUP_UNIT)
+    message, mtime = last_message()
+    kind = message.get("message_type") if message else None
+
+    if backup_active in ("activating", "active", "reloading"):
+        if kind != "status":
+            return ICON_BUSY, "", ["Backing up"], True
+        percent = message.get("percent_done", 0) * 100
+        lines = [
+            f"Backing up: {percent:.0f}%",
+            f"{size(message.get('bytes_done', 0))} of {size(message.get('total_bytes', 0))}"
+            f" · {message.get('files_done', 0):,} of {message.get('total_files', 0):,} files",
+        ]
+        if message.get("seconds_remaining"):
+            lines.append(f"About {duration(message['seconds_remaining'])} left")
+        return ICON_BUSY, f"{percent:.0f}%", lines, True
+
+    if unit_state(MAINTENANCE_UNIT)[0] in ("activating", "active"):
+        return ICON_BUSY, "", ["Removing old snapshots and checking the data"], True
+
+    failed = backup_result not in ("success", "unknown")
+    if kind == "summary":
+        try:
+            finished = datetime.fromisoformat(message["backup_end"]).astimezone().replace(tzinfo=None)
+        except (KeyError, ValueError):
+            finished = datetime.fromtimestamp(mtime)
+        lines = [
+            f"Last backup: {when(finished)}",
+            f"{message.get('files_new', 0):,} new and {message.get('files_changed', 0):,} changed files"
+            f" · {size(message.get('data_added', 0))} added",
+        ]
+        if failed:
+            lines.append("Some files couldn't be read. See: journalctl --user -u restic-backup")
+        return (ICON_FAILED if failed else ICON_IDLE), "", lines, False
+    if failed:
+        return ICON_FAILED, "", ["Last backup failed. See: journalctl --user -u restic-backup"], False
+    if kind == "status":
+        return ICON_FAILED, "", [f"Last backup stopped at {message.get('percent_done', 0) * 100:.0f}%",
+                                 "It continues on the next run"], False
+    return ICON_IDLE, "", ["No backup yet"], False
+
+
+def run_tray():
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("AyatanaAppIndicator3", "0.1")
+    from gi.repository import AyatanaAppIndicator3 as AppIndicator
+    from gi.repository import GLib, Gtk
+
+    indicator = AppIndicator.Indicator.new(
+        "restic-backup", ICON_IDLE, AppIndicator.IndicatorCategory.SYSTEM_SERVICES)
+    indicator.set_icon_theme_path(ICON_DIR)
+    indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+    indicator.set_title("restic backup")
+
+    menu = Gtk.Menu()
+    info = [Gtk.MenuItem(label="") for _ in range(3)]
+    for item in info:
+        item.set_sensitive(False)
+        menu.append(item)
+    menu.append(Gtk.SeparatorMenuItem())
+    start = Gtk.MenuItem(label="Back up now")
+    start.connect("activate", lambda _: subprocess.Popen(
+        ["systemctl", "--user", "start", "--no-block", BACKUP_UNIT]))
+    menu.append(start)
+    menu.show_all()
+    indicator.set_menu(menu)
+
+    shown = {}
+
+    def update():
+        icon, label, lines, busy = status()
+        if shown.get("icon") != icon:
+            indicator.set_icon_full(icon, "restic backup")
+        if shown.get("label") != label:
+            indicator.set_label(label, "100%")
+        if shown.get("lines") != lines:
+            indicator.set_title(" · ".join(["restic backup"] + lines))
+            for item, text in zip(info, lines + [""] * len(info)):
+                item.set_label(text)
+                item.set_visible(bool(text))
+        start.set_sensitive(not busy)
+        shown.update(icon=icon, label=label, lines=lines)
+        return True
+
+    update()
+    GLib.timeout_add_seconds(POLL_SECONDS, update)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    if "--status" in sys.argv[1:]:
+        print("\n".join(status()[2]))
+    else:
+        run_tray()
