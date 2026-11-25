@@ -7,16 +7,15 @@ Type=oneshot
 EnvironmentFile=%h/.config/restic/env
 Nice=19
 IOSchedulingClass=idle
-# Creates ~/.local/state/restic for the progress file below
-StateDirectory=restic
-# restic writes its progress as JSON lines to ~/.local/state/restic/backup.json (once every 2 seconds),
-# and the summary of the run as the last line. restic-tray reads it. Errors still go to the journal.
+# Progress as JSON, once every 2 seconds. See ExecStart.
 Environment=RESTIC_PROGRESS_FPS=0.5
-StandardOutput=truncate:%S/restic/backup.json
-StandardError=journal
+# Folder for the progress file
+ExecStartPre=mkdir -p %S/restic
 # After waking from sleep the network needs a few seconds, so wait up to 5 minutes for the repository
 ExecStartPre=timeout 300 sh -c 'until restic cat config --no-lock >/dev/null; do sleep 5; done'
 # Save the installed package lists so they end up in the backup. The "-" means a failure here is ignored.
 ExecStartPre=-sh -c 'if command -v pacman >/dev/null; then pacman -Qqe; else dnf repoquery --userinstalled --queryformat "%%{name}\n"; fi > %h/.config/pkglist.txt'
 ExecStartPre=-sh -c 'flatpak list --app --columns=origin,application > %h/.config/flatpaks.txt'
-ExecStart=restic backup --json --files-from=%h/.config/restic/paths --exclude-file=%h/.config/restic/excludes --exclude-caches
+# restic writes its progress as JSON lines to ~/.local/state/restic/backup.json, with the summary of the
+# run as the last line. restic-tray reads it. Errors still go to the journal. "exec" keeps restic's exit code.
+ExecStart=sh -c 'exec restic backup --json --files-from=%h/.config/restic/paths --exclude-file=%h/.config/restic/excludes --exclude-caches > %S/restic/backup.json'
